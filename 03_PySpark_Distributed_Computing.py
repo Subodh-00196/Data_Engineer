@@ -159,10 +159,16 @@ df.write.mode('append').option('header', 'true').csv('path/to/output/')
 df.write.mode('overwrite').parquet('path/to/output/')
 
 # Partitioned Write (Important for Performance)
-df.write.partitionBy('year', 'month').mode('overwrite').parquet('path/to/output/')
 
-# Bucketed Write (sorts within partition)
-df.write.bucketBy(10, "id").sortBy("id").mode('overwrite').parquet('path/to/output/')
+df_sorted = df.repartition("year", "month").sortWithinPartitions("id")
+
+df_sorted.write.partitionBy("year", "month").mode("overwrite").parquet("path/to/output/")
+
+
+# Bucketed Write (sorts within buckets)
+
+df.write.bucketBy(10, "id").sortBy("id").saveAsTable("bucketed_table")
+
 
 # Write to Database
 df.write.jdbc(url=jdbc_url, table="target_table", mode="append", properties=connection_properties)
