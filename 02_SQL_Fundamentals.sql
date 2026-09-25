@@ -150,6 +150,11 @@ SELECT department, STRING_AGG(name, ', ') AS employee_names
 FROM employees
 GROUP BY department;
 
+--Snowflake
+SELECT department, LIST_AGG(name, ', ') AS employee_names
+FROM employees
+GROUP BY department;
+
 /* Count NULL values */
 SELECT 
     COUNT(*) AS total_rows,
