@@ -298,6 +298,9 @@ SELECT p.product_name, p.category, s.total_quantity
 FROM product_info p
 JOIN sales_summary s ON p.product_id = s.product_id;
 
+/*Top to Bottom - Employee.Manager_Id = Manager.Employee_Id */
+/*Bottom to Top - Manger.Manager_Id = Employee.Employee_Id */
+
 /* RECURSIVE CTE - Employee Hierarchy */
 WITH RECURSIVE EmployeeHierarchy AS (
     -- Anchor member: Top-level managers
