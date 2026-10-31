@@ -861,6 +861,141 @@ glueContext.create_dynamic_frame.from_catalog(
 
 ---
 
+## 15a. Snowflake with PySpark and Running SQL Scripts
+
+### Snowflake Spark connector – setup
+Needs two JARs matching your Spark/Scala version: `spark-snowflake_2.12` and `snowflake-jdbc` (EMR: `--packages`; Glue: `--extra-jars`, or Glue 4.0+ native Snowflake connection).
+```python
+import json, boto3
+
+secret = json.loads(boto3.client("secretsmanager")
+                    .get_secret_value(SecretId="prod/snowflake/etl")["SecretString"])
+
+sf_options = {
+    "sfURL":       "myorg-myaccount.snowflakecomputing.com",
+    "sfUser":      secret["user"],
+    "pem_private_key": secret["private_key"],   # key-pair auth (key body without BEGIN/END lines); or "sfPassword"
+    "sfRole":      "DATA_ENGINEER",
+    "sfWarehouse": "TRANSFORM_WH",
+    "sfDatabase":  "SALES_DB",
+    "sfSchema":    "CURATED",
+}
+SF = "net.snowflake.spark.snowflake"            # short name "snowflake" also works on Databricks/Glue
+```
+Never hardcode credentials – read them from Secrets Manager (or a Glue connection).
+
+### Read from Snowflake
+```python
+# Whole table
+df = spark.read.format(SF).options(**sf_options).option("dbtable", "ORDERS").load()
+
+# SQL query – executed IN Snowflake, only the result comes to Spark
+df = (spark.read.format(SF).options(**sf_options)
+      .option("query", """
+          SELECT order_id, customer_id, amount, order_date
+          FROM SALES_DB.CURATED.ORDERS
+          WHERE order_date >= DATEADD(day, -7, CURRENT_DATE())
+      """)
+      .load())
+
+# Filters/aggregations written in Spark are also pushed down to Snowflake ("autopushdown", on by default)
+df.filter(F.col("AMOUNT") > 100).groupBy("CUSTOMER_ID").agg(F.sum("AMOUNT")).show()
+```
+Snowflake returns unquoted column names in UPPERCASE – reference them as `"AMOUNT"`, not `"amount"`.
+
+### Write to Snowflake
+```python
+(df.write.format(SF).options(**sf_options)
+   .option("dbtable", "STG_ORDERS")
+   .mode("append")                       # append | overwrite | errorifexists | ignore
+   .save())
+
+# Overwrite drops and recreates the table by default; keep the table definition and grants with:
+(df.write.format(SF).options(**sf_options)
+   .option("dbtable", "STG_ORDERS")
+   .option("truncate_table", "on")       # truncate instead of drop/recreate
+   .option("usestagingtable", "on")      # load into a temp table, then swap → target untouched if the load fails
+   .mode("overwrite").save())
+```
+Under the hood the connector stages data (internal stage or S3) and runs `COPY INTO`, so writes are bulk loads.
+
+### Run DDL/DML in Snowflake from PySpark (no DataFrame returned)
+```python
+# Utils.runQuery executes any statement (CREATE, MERGE, CALL, TRUNCATE ...) in Snowflake
+sf_utils = spark.sparkContext._jvm.net.snowflake.spark.snowflake.Utils
+sf_utils.runQuery(sf_options, "TRUNCATE TABLE IF EXISTS SALES_DB.STAGE.STG_ORDERS")
+sf_utils.runQuery(sf_options, """
+    MERGE INTO SALES_DB.CURATED.ORDERS t
+    USING SALES_DB.STAGE.STG_ORDERS s ON t.order_id = s.order_id
+    WHEN MATCHED THEN UPDATE SET t.amount = s.amount
+    WHEN NOT MATCHED THEN INSERT (order_id, amount) VALUES (s.order_id, s.amount)
+""")
+sf_utils.runQuery(sf_options, "CALL SALES_DB.CURATED.SP_PROCESS_ORDERS()")
+```
+Typical ELT pattern: Spark writes the batch to a staging table → `runQuery` runs the MERGE inside Snowflake (pushes the heavy work to Snowflake compute).
+
+### Read a SQL script from S3
+```python
+import boto3
+from string import Template
+
+def read_sql_from_s3(bucket: str, key: str) -> str:
+    obj = boto3.client("s3").get_object(Bucket=bucket, Key=key)
+    return obj["Body"].read().decode("utf-8")
+
+# Spark-only alternative (no boto3): whole file as one row
+sql_text = spark.read.text("s3://code-bucket/sql/daily_orders.sql", wholetext=True).first()[0]
+
+sql_text = read_sql_from_s3("code-bucket", "sql/daily_orders.sql")
+
+# Substitute ${placeholders} – safe_substitute leaves unknown ${...} untouched
+params = {"db_nm": "SALES_DB", "schema_nm": "CURATED", "run_date": "2026-10-29"}
+sql_text = Template(sql_text).safe_substitute(params)
+```
+Only substitute trusted values (config, not user input) – string substitution in SQL is a SQL-injection risk.
+
+### Run a SQL query or script directly
+```python
+# 1. Single SELECT from the S3 file → run in Snowflake, get a DataFrame
+df = spark.read.format(SF).options(**sf_options).option("query", sql_text).load()
+
+# 2. Multi-statement script → run each statement in Snowflake
+def split_sql(script: str):
+    # Simple splitter: assumes ';' never appears inside strings/procedure bodies.
+    return [s.strip() for s in script.split(";") if s.strip()]
+
+for stmt in split_sql(sql_text):
+    logger.info("Running: %s", stmt[:100])
+    sf_utils.runQuery(sf_options, stmt)
+
+# 3. Script against Spark tables (Glue Catalog / Hive / temp views) → spark.sql per statement
+for stmt in split_sql(sql_text):
+    result = spark.sql(stmt)          # spark.sql runs ONE statement per call
+result.show()                         # last statement's result (if it was a SELECT)
+```
+
+**Python connector alternative** (no Spark needed – good for control steps, procedures, or scripts with `;` inside procedure bodies):
+```python
+import snowflake.connector
+
+with snowflake.connector.connect(
+        account="myorg-myaccount", user=secret["user"], private_key_file="/tmp/rsa_key.p8",
+        role="DATA_ENGINEER", warehouse="TRANSFORM_WH", database="SALES_DB", schema="CURATED") as conn:
+    for cursor in conn.execute_string(sql_text):      # runs every statement in the script
+        logger.info("Rows affected: %s", cursor.rowcount)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM ORDERS WHERE order_date = %s", ("2026-10-29",))   # bind variables
+    print(cur.fetchone()[0])
+```
+
+**Interview points**
+- `query` / `autopushdown` push work into Snowflake – don't pull a whole table into Spark just to filter it.
+- `spark.sql()` runs one statement against **Spark** tables; Snowflake statements go through the connector (`runQuery`) or the Python connector.
+- Load to a staging table, then MERGE in Snowflake → idempotent and transactional.
+- Store SQL in S3/Git, parameterize with `${placeholders}`, log the resolved SQL, and fetch credentials from Secrets Manager.
+
+---
+
 ## 16. Delta Lake, Incremental Loads and SCD
 
 ```python
