@@ -1,842 +1,869 @@
-"""
-================================================================================
-                    PYTHON - DATA ENGINEER INTERVIEW GUIDE
-================================================================================
-Comprehensive Python examples for Data Engineering interviews
-Last Updated: March 2026
-================================================================================
+## 1. Core Concepts Interviewers Probe
 
-TABLE OF CONTENTS:
-1. STRING MANIPULATION
-2. DATA STRUCTURES (LIST, DICT, SET, TUPLE)
-3. FUNCTIONAL PROGRAMMING (MAP, FILTER, REDUCE, LAMBDA)
-4. SORTING & SEARCHING ALGORITHMS
-5. RECURSION
-6. ITERATORS & GENERATORS
-7. FILE HANDLING & I/O
-8. REGULAR EXPRESSIONS
-9. DATE & TIME OPERATIONS
-10. ERROR HANDLING & EXCEPTIONS
-11. OBJECT-ORIENTED PROGRAMMING
-12. COMMON INTERVIEW PROBLEMS
-13. AWS BOTO3 BASICS
-================================================================================
-"""
+| Concept | Key point |
+|---|---|
+| Mutable vs immutable | Mutable: `list`, `dict`, `set`. Immutable: `int`, `float`, `str`, `tuple`, `frozenset`. Only hashable (immutable) objects can be dict keys / set members. |
+| `is` vs `==` | `==` compares values; `is` compares identity (same object). Use `is` only for `None`. |
+| Pass-by-object-reference | Functions receive a reference. Mutating a list inside a function changes the caller's list; reassigning the name does not. |
+| Shallow vs deep copy | `copy.copy(x)` / `x[:]` copies the outer container only; `copy.deepcopy(x)` copies nested objects too. |
+| Truthiness | `0`, `0.0`, `''`, `[]`, `{}`, `set()`, `None` are falsy. |
+| GIL | CPython runs one thread of Python bytecode at a time → threads help **I/O-bound** work (API calls, S3); use **multiprocessing** for CPU-bound work. |
+| Memory | Generators and iterators process data lazily → constant memory for large files. |
 
-# ============================================================================
-# 1. STRING MANIPULATION
-# ============================================================================
+```python
+import copy
+a = [[1, 2], [3]]
+b = copy.copy(a);  b[0].append(9)   # a is changed too → [[1, 2, 9], [3]]
+c = copy.deepcopy(a); c[0].append(7) # a unchanged
+```
 
-""" Reverse a String """
-# Method 1: Using slicing
-original_string = "hello"
-reversed_string = original_string[::-1]
-print(reversed_string)  # Output: "olleh"
+**Mutable default argument pitfall (very common):**
+```python
+def add(item, bucket=[]):      # BAD – same list reused across calls
+    bucket.append(item); return bucket
 
-# Method 2: Using loop
-reversed_string = ""
-for char in original_string:
-    reversed_string = char + reversed_string
+def add(item, bucket=None):    # GOOD
+    bucket = [] if bucket is None else bucket
+    bucket.append(item); return bucket
+```
 
-# Method 3: Using reversed()
-reversed_string = ''.join(reversed(original_string))
+---
 
-""" Check if String is Palindrome """
+## 2. Built-in Collections
+
+### Complexity cheat sheet
+| Operation | list | dict / set |
+|---|---|---|
+| Index / lookup by key | O(1) | O(1) average |
+| `x in` | O(n) | O(1) average |
+| Append / add | O(1) amortized | O(1) average |
+| Insert/delete at front | O(n) | – |
+| Sort | O(n log n) (Timsort, stable) | – |
+
+Use a **set/dict for membership checks**, not a list.
+
+### List
+```python
+nums = [3, 1, 4, 1, 5]
+nums.append(9); nums.extend([2, 6]); nums.insert(0, 0)
+nums.remove(1)        # removes first 1
+last = nums.pop()     # removes last; pop(0) is O(n) → use deque
+nums.sort()           # in place, returns None
+ordered = sorted(nums, reverse=True)   # new list
+first3, last3 = nums[:3], nums[-3:]
+```
+
+### Dict
+```python
+d = {'a': 1, 'b': 2}
+d.get('z', 0)                    # default instead of KeyError
+d.setdefault('c', []).append(5)  # create if missing
+merged = d | {'b': 20}           # 3.9+, right side wins
+for k, v in d.items(): ...
+by_value = dict(sorted(d.items(), key=lambda kv: kv[1], reverse=True))
+```
+Dicts keep insertion order (guaranteed since 3.7).
+
+### Set and tuple
+```python
+s1, s2 = {1, 2, 3}, {3, 4}
+s1 | s2, s1 & s2, s1 - s2, s1 ^ s2     # union, intersection, difference, symmetric diff
+
+point = (10, 20)                        # immutable, hashable → usable as dict key
+x, y = point                            # unpacking
+first, *rest = [1, 2, 3, 4]             # first=1, rest=[2, 3, 4]
+```
+
+### `collections` module
+```python
+from collections import Counter, defaultdict, deque, namedtuple, OrderedDict
+
+Counter("mississippi").most_common(2)      # [('i', 4), ('s', 4)]
+
+groups = defaultdict(list)                 # no KeyError on first access
+for dept, name in [('IT', 'A'), ('HR', 'B'), ('IT', 'C')]:
+    groups[dept].append(name)              # {'IT': ['A', 'C'], 'HR': ['B']}
+
+q = deque(maxlen=3)                        # O(1) append/pop at both ends
+q.extend([1, 2, 3, 4])                     # deque([2, 3, 4]) – keeps last 3
+
+Row = namedtuple('Row', 'id name')
+r = Row(1, 'Alice'); r.name                # readable, immutable record
+
+od = OrderedDict(a=1, b=2); od.move_to_end('a')   # move_to_end/popitem(last=False) → LRU cache (section 16)
+```
+
+`heapq` – top-N without sorting everything:
+```python
+import heapq
+heapq.nlargest(3, [5, 1, 9, 7, 3])                 # [9, 7, 5]
+heapq.nsmallest(2, rows, key=lambda r: r['ts'])   # works with key
+```
+
+### dataclasses (clean record classes)
+```python
+from dataclasses import dataclass, field
+
+@dataclass(frozen=True)          # frozen → immutable & hashable
+class Order:
+    order_id: int
+    amount: float
+    tags: list = field(default_factory=list)   # never use a mutable literal default
+```
+
+---
+
+## 3. Strings
+
+```python
+s = "  Hello, World  "
+s.strip().lower().replace(',', '')
+"a,b,,c".split(',')            # ['a', 'b', '', 'c']
+'-'.join(['2026', '10', '29']) # build strings with join, not += in a loop (O(n²))
+f"{3.14159:.2f} | {42:05d} | {'x':>5}"   # '3.14 | 00042 |     x'
+s[::-1]                        # reverse
+"abc".startswith('a'), "42".isdigit(), "ab1".isalnum()
+```
+
+Common problems:
+```python
 def is_palindrome(s):
-    # Remove spaces and convert to lowercase
     s = ''.join(c.lower() for c in s if c.isalnum())
     return s == s[::-1]
 
-print(is_palindrome("A man, a plan, a canal, Panama"))  # True
+def are_anagrams(a, b):
+    return Counter(a.lower()) == Counter(b.lower())      # O(n) vs sorted O(n log n)
 
-""" Count Character Occurrences """
-# Method 1: Using dictionary
-text = "GeeksforGeeks"
-char_count = {}
-for c in text:
-    char_count[c] = char_count.get(c, 0) + 1
+def first_non_repeating(s):
+    counts = Counter(s)
+    return next((c for c in s if counts[c] == 1), None)
 
-# Method 2: Using Counter
-from collections import Counter
-char_count = Counter(text)
+def compress(s):                                          # "aabcccccaaa" → "a2b1c5a3"
+    from itertools import groupby
+    out = ''.join(f"{ch}{len(list(g))}" for ch, g in groupby(s))
+    return out if len(out) < len(s) else s
 
-# Find max and min occurrence
-max_char = max(char_count, key=char_count.get)
-min_char = min(char_count, key=char_count.get)
+def longest_unique_substring(s):                          # sliding window, O(n)
+    last, left, best = {}, 0, 0
+    for right, ch in enumerate(s):
+        if last.get(ch, -1) >= left:
+            left = last[ch] + 1
+        last[ch] = right
+        best = max(best, right - left + 1)
+    return best
+```
 
-""" Find Duplicate Words """
-def find_duplicate_words(sentence):
-    words = sentence.split()
-    word_counts = {}
-    
-    for word in words:
-        word_counts[word] = word_counts.get(word, 0) + 1
-    
-    duplicates = [word for word, count in word_counts.items() if count > 1]
-    return duplicates
+### Regular expressions
+```python
+import re
+text = "Call 123-456-7890 or 987-654-3210"
+re.findall(r'\d{3}-\d{3}-\d{4}', text)                 # all phone numbers
+re.sub(r'\d(?=\d{4})', '*', "4111111111111111")        # mask all but last 4 digits
+m = re.search(r'(\d{3})-(\d{3})-(\d{4})', text); m.group(1) if m else None
+re.split(r'[,\s]+', "apple, banana  orange")           # ['apple', 'banana', 'orange']
+LOG = re.compile(r'(?P<ts>\S+) (?P<level>INFO|ERROR) (?P<msg>.*)')   # compile once, reuse
+```
+`re.match` checks only the start of the string; `re.search` scans anywhere; `re.fullmatch` requires the whole string.
 
-sentence = "this is a test sentence with duplicate words this is a test"
-print(find_duplicate_words(sentence))
+---
 
-""" Remove Duplicates from String """
-def remove_duplicates(s):
-    seen = set()
-    result = []
-    for char in s:
-        if char not in seen:
-            seen.add(char)
-            result.append(char)
-    return ''.join(result)
+## 4. Comprehensions and Functional Tools
 
-""" Anagram Check """
-def are_anagrams(str1, str2):
-    return sorted(str1.lower()) == sorted(str2.lower())
+```python
+squares   = [x * x for x in range(10)]
+evens     = [x for x in range(20) if x % 2 == 0]
+labels    = ['even' if x % 2 == 0 else 'odd' for x in range(5)]   # if/else goes before for
+flat      = [x for row in [[1, 2], [3, 4]] for x in row]           # [1, 2, 3, 4]
+inv       = {v: k for k, v in {'a': 1, 'b': 2}.items()}            # dict comprehension
+uniq_len  = {len(w) for w in ['a', 'bb', 'cc']}                    # set comprehension
+total     = sum(x * x for x in range(10**6))                       # generator: no big list
+```
+Prefer comprehensions over `map`/`filter` + `lambda` for readability; keep them to one level of nesting.
 
-print(are_anagrams("listen", "silent"))  # True
-
-""" String Compression """
-def compress_string(s):
-    if not s:
-        return s
-    
-    result = []
-    count = 1
-    
-    for i in range(1, len(s)):
-        if s[i] == s[i-1]:
-            count += 1
-        else:
-            result.append(s[i-1] + str(count))
-            count = 1
-    
-    result.append(s[-1] + str(count))
-    compressed = ''.join(result)
-    
-    return compressed if len(compressed) < len(s) else s
-
-print(compress_string("aabcccccaaa"))  # a2b1c5a3
-
-# ============================================================================
-# 2. DATA STRUCTURES (LIST, DICT, SET, TUPLE)
-# ============================================================================
-
-""" List Operations """
-# Create list
-my_list = [1, 2, 3, 4, 5]
-
-# Append, Insert, Remove
-my_list.append(6)
-my_list.insert(0, 0)
-my_list.remove(3)
-my_list.pop()
-my_list.pop(0)
-
-# List comprehension
-squares = [x**2 for x in range(10)]
-evens = [x for x in range(20) if x % 2 == 0]
-
-# Nested list comprehension
-matrix = [[i*j for j in range(3)] for i in range(3)]
-
-# Flatten nested list
-nested = [[1, 2], [3, 4], [5, 6]]
-flattened = [item for sublist in nested for item in sublist]
-
-""" Dictionary Operations """
-# Create dictionary
-my_dict = {'a': 1, 'b': 2, 'c': 3}
-
-# Get value with default
-value = my_dict.get('d', 0)
-
-# Dictionary comprehension
-squared_dict = {x: x**2 for x in range(5)}
-
-# Merge dictionaries (Python 3.9+)
-dict1 = {'a': 1, 'b': 2}
-dict2 = {'c': 3, 'd': 4}
-merged = dict1 | dict2
-
-# Sort dictionary by key
-sorted_dict = dict(sorted(my_dict.items()))
-
-# Sort dictionary by value
-sorted_by_value = dict(sorted(my_dict.items(), key=lambda x: x[1], reverse=True))
-
-# Group by key
-from itertools import groupby
-data = [('a', 1), ('b', 2), ('a', 3), ('b', 4)]
-grouped = {k: [v for _, v in g] for k, g in groupby(sorted(data), key=lambda x: x[0])}
-
-""" Set Operations """
-set1 = {1, 2, 3, 4}
-set2 = {3, 4, 5, 6}
-
-# Union
-union = set1 | set2
-union = set1.union(set2)
-
-# Intersection
-intersection = set1 & set2
-intersection = set1.intersection(set2)
-
-# Difference
-difference = set1 - set2
-difference = set1.difference(set2)
-
-# Symmetric difference
-sym_diff = set1 ^ set2
-
-""" Find Missing Number in Array """
-def find_missing(arr, n):
-    # Expected sum of 1 to n
-    expected_sum = n * (n + 1) // 2
-    actual_sum = sum(arr)
-    return expected_sum - actual_sum
-
-print(find_missing([1, 2, 4, 5], 5))  # 3
-
-""" Two Sum Problem """
-def two_sum(nums, target):
-    seen = {}
-    for i, num in enumerate(nums):
-        complement = target - num
-        if complement in seen:
-            return [seen[complement], i]
-        seen[num] = i
-    return []
-
-print(two_sum([2, 7, 11, 15], 9))  # [0, 1]
-
-# ============================================================================
-# 3. FUNCTIONAL PROGRAMMING
-# ============================================================================
-
-""" Map - Apply function to all items """
-numbers = [1, 2, 3, 4, 5]
-squared = list(map(lambda x: x ** 2, numbers))
-print(squared)  # [1, 4, 9, 16, 25]
-
-# Map with multiple iterables
-list1 = [1, 2, 3]
-list2 = [4, 5, 6]
-result = list(map(lambda x, y: x + y, list1, list2))
-
-""" Filter - Filter items based on condition """
-numbers = [1, 2, 3, 4, 5, 6]
-evens = list(filter(lambda x: x % 2 == 0, numbers))
-print(evens)  # [2, 4, 6]
-
-""" Reduce - Reduce to single value """
+```python
 from functools import reduce
+list(map(str.upper, ['a', 'b']))               # ['A', 'B']
+list(filter(None, [0, 1, '', 'x']))            # [1, 'x'] – removes falsy
+reduce(lambda acc, x: acc * x, [1, 2, 3, 4])   # 24
+list(zip(['a', 'b'], [1, 2]))                  # [('a', 1), ('b', 2)] – stops at shortest
+names, scores = zip(*[('a', 1), ('b', 2)])     # unzip
+all(x > 0 for x in [1, 2]), any(x < 0 for x in [1, -2])
+for i, v in enumerate(['x', 'y'], start=1): ...
+sorted(rows, key=lambda r: (r['dept'], -r['salary']))   # multi-key sort
+```
 
-numbers = [1, 2, 3, 4, 5]
-product = reduce(lambda x, y: x * y, numbers)
-print(product)  # 120
+`itertools` highlights:
+```python
+from itertools import chain, islice, groupby, product, combinations, accumulate
+list(chain([1, 2], [3]))                 # [1, 2, 3]
+list(islice(huge_generator(), 5))        # first 5 items lazily
+list(accumulate([1, 2, 3]))              # running total [1, 3, 6]
+list(combinations('abc', 2))             # [('a','b'), ('a','c'), ('b','c')]
+# groupby only groups CONSECUTIVE equal keys → sort by the key first
+for k, grp in groupby(sorted(data, key=lambda r: r['k']), key=lambda r: r['k']): ...
+```
 
-# Find maximum using reduce
-maximum = reduce(lambda x, y: x if x > y else y, numbers)
+---
 
-""" Lambda Functions """
-# Sort by custom key
-students = [('Alice', 85), ('Bob', 75), ('Charlie', 90)]
-sorted_students = sorted(students, key=lambda x: x[1], reverse=True)
+## 5. Functions
 
-# Filter and map combined
-result = list(map(lambda x: x**2, filter(lambda x: x % 2 == 0, range(10))))
+```python
+def load(path, *args, sep=',', **kwargs):   # positional, *args tuple, keyword-only sep, **kwargs dict
+    ...
+load('a.csv', 1, 2, sep='|', encoding='utf-8')
 
-""" Zip Function """
-names = ['Alice', 'Bob', 'Charlie']
-scores = [85, 75, 90]
-combined = list(zip(names, scores))
-# [('Alice', 85), ('Bob', 75), ('Charlie', 90)]
+def f(a, b, /, c, *, d): ...   # a, b positional-only; d keyword-only
+```
 
-# Unzip
-names, scores = zip(*combined)
+- **First-class functions:** can be passed, returned, stored in dicts.
+- **Closures:** an inner function remembers variables of the enclosing scope.
+- **Scope (LEGB):** Local → Enclosing → Global → Built-in. Use `nonlocal` / `global` to rebind.
+- **Type hints** document intent; not enforced at runtime.
 
-""" All and Any """
-numbers = [2, 4, 6, 8]
-all_even = all(x % 2 == 0 for x in numbers)  # True
-any_odd = any(x % 2 != 0 for x in numbers)   # False
+```python
+def make_multiplier(n):
+    def multiply(x):
+        return x * n          # n captured by the closure
+    return multiply
+double = make_multiplier(2); double(5)   # 10
 
-# ============================================================================
-# 4. SORTING & SEARCHING ALGORITHMS
-# ============================================================================
+def counter():
+    count = 0
+    def inc():
+        nonlocal count; count += 1; return count
+    return inc
+```
 
-""" Bubble Sort """
-def bubble_sort(arr):
-    n = len(arr)
-    for i in range(n):
-        for j in range(0, n - i - 1):
-            if arr[j] > arr[j + 1]:
-                arr[j], arr[j + 1] = arr[j + 1], arr[j]
-    return arr
+Memoization – use the standard library, not a mutable default dict:
+```python
+from functools import lru_cache
 
-""" Merge Sort (Recursive) """
-def merge_sort(arr):
-    if len(arr) <= 1:
-        return arr
-    
-    mid = len(arr) // 2
-    left = merge_sort(arr[:mid])
-    right = merge_sort(arr[mid:])
-    
-    return merge(left, right)
+@lru_cache(maxsize=None)
+def fib(n: int) -> int:
+    return n if n < 2 else fib(n - 1) + fib(n - 2)
+```
+Recursion: Python's default limit is ~1000 frames and there is no tail-call optimization – prefer iteration for deep inputs.
 
-def merge(left, right):
-    result = []
-    i = j = 0
-    
-    while i < len(left) and j < len(right):
-        if left[i] < right[j]:
-            result.append(left[i])
-            i += 1
-        else:
-            result.append(right[j])
-            j += 1
-    
-    result.extend(left[i:])
-    result.extend(right[j:])
-    return result
+---
 
-""" Quick Sort """
-def quick_sort(arr):
-    if len(arr) <= 1:
-        return arr
-    
-    pivot = arr[len(arr) // 2]
-    left = [x for x in arr if x < pivot]
-    middle = [x for x in arr if x == pivot]
-    right = [x for x in arr if x > pivot]
-    
-    return quick_sort(left) + middle + quick_sort(right)
+## 6. Iterators and Generators
 
-""" Binary Search """
-def binary_search(arr, target):
-    left, right = 0, len(arr) - 1
-    
-    while left <= right:
-        mid = (left + right) // 2
-        
-        if arr[mid] == target:
-            return mid
-        elif arr[mid] < target:
-            left = mid + 1
-        else:
-            right = mid - 1
-    
-    return -1
+- **Iterable:** has `__iter__` (list, dict, file, generator).
+- **Iterator:** has `__next__`; raises `StopIteration` when done; can be consumed **only once**.
+- **Generator:** a function with `yield` – an easy way to build an iterator. Values are produced lazily, so memory stays constant.
 
-""" Find Second Largest Element """
-def second_largest(arr):
-    if len(arr) < 2:
-        return None
-    
-    largest = second = float('-inf')
-    
-    for num in arr:
-        if num > largest:
-            second = largest
-            largest = num
-        elif num > second and num != largest:
-            second = num
-    
-    return second if second != float('-inf') else None
-
-# ============================================================================
-# 5. RECURSION
-# ============================================================================
-
-""" Factorial """
-def factorial(n):
-    if n <= 1:
-        return 1
-    return n * factorial(n - 1)
-
-""" Fibonacci """
-def fibonacci(n):
-    if n <= 1:
-        return n
-    return fibonacci(n - 1) + fibonacci(n - 2)
-
-# Fibonacci with memoization
-def fibonacci_memo(n, memo={}):
-    if n in memo:
-        return memo[n]
-    if n <= 1:
-        return n
-    memo[n] = fibonacci_memo(n - 1, memo) + fibonacci_memo(n - 2, memo)
-    return memo[n]
-
-""" Reverse List Recursively """
-def reverse_list(lst):
-    if len(lst) <= 1:
-        return lst
-    return reverse_list(lst[1:]) + [lst[0]]
-
-""" Sum of Digits """
-def sum_of_digits(n):
-    if n == 0:
-        return 0
-    return n % 10 + sum_of_digits(n // 10)
-
-""" Tower of Hanoi """
-def tower_of_hanoi(n, source, destination, auxiliary):
-    if n == 1:
-        print(f"Move disk 1 from {source} to {destination}")
-        return
-    
-    tower_of_hanoi(n - 1, source, auxiliary, destination)
-    print(f"Move disk {n} from {source} to {destination}")
-    tower_of_hanoi(n - 1, auxiliary, destination, source)
-
-# ============================================================================
-# 6. ITERATORS & GENERATORS
-# ============================================================================
-
-""" Custom Iterator """
-class MyIterator:
+```python
+class CountUp:                         # custom iterator
     def __init__(self, start, end):
-        self.current = start
-        self.end = end
-    
+        self.cur, self.end = start, end
     def __iter__(self):
         return self
-    
     def __next__(self):
-        if self.current < self.end:
-            self.current += 1
-            return self.current - 1
-        else:
+        if self.cur >= self.end:
             raise StopIteration
+        self.cur += 1
+        return self.cur - 1
 
-# Usage
-for num in MyIterator(1, 5):
-    print(num)
+def read_lines(path):                  # generator: file of any size
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            yield line.rstrip('\n')
 
-""" Generator Function """
-def fibonacci_generator():
-    a, b = 0, 1
-    while True:
-        yield a
-        a, b = b, a + b
+def chunked(iterable, size):           # batch records for bulk inserts / API calls
+    it = iter(iterable)
+    while batch := list(islice(it, size)):
+        yield batch
 
-# Usage
-fib_gen = fibonacci_generator()
-for _ in range(10):
-    print(next(fib_gen))
+# Generator pipeline: each stage processes one record at a time
+lines   = read_lines('events.log')
+errors  = (l for l in lines if 'ERROR' in l)
+parsed  = (l.split('|') for l in errors)
+for batch in chunked(parsed, 1000):
+    ...   # write batch
+```
+Gotcha: a generator is exhausted after one pass – `list(gen)` twice returns `[]` the second time.
+`yield from sub_gen()` delegates to another generator.
 
-""" Generator Expression """
-squares_gen = (x**2 for x in range(10))
+---
 
-""" Read Large File with Generator """
-def read_large_file(file_path):
-    with open(file_path, 'r') as file:
-        for line in file:
-            yield line.strip()
+## 7. Decorators
 
-# ============================================================================
-# 7. FILE HANDLING & I/O
-# ============================================================================
+A decorator takes a function and returns a new function that adds behaviour (logging, timing, retries, auth). Always use `functools.wraps` to keep the original name/docstring.
 
-""" Read File """
-# Method 1: Read entire file
-with open('file.txt', 'r') as f:
-    content = f.read()
+```python
+import functools, time, logging
 
-# Method 2: Read line by line
-with open('file.txt', 'r') as f:
-    for line in f:
-        print(line.strip())
+def timer(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            logging.info("%s took %.2fs", func.__name__, time.perf_counter() - start)
+    return wrapper
 
-# Method 3: Read all lines into list
-with open('file.txt', 'r') as f:
-    lines = f.readlines()
+def retry(times=3, delay=1, exceptions=(Exception,)):   # decorator with arguments → 3 levels
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(1, times + 1):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions:
+                    if attempt == times:
+                        raise
+                    time.sleep(delay * 2 ** (attempt - 1))   # exponential backoff
+        return wrapper
+    return decorator
 
-""" Write File """
-with open('output.txt', 'w') as f:
-    f.write("Hello, World!\n")
+@retry(times=3, exceptions=(ConnectionError,))
+@timer
+def fetch_page(url): ...
+```
+Stacked decorators apply bottom-up: `fetch_page = retry(...)(timer(fetch_page))`.
 
-# Append to file
-with open('output.txt', 'a') as f:
-    f.write("New line\n")
+---
 
-""" CSV Operations """
-import csv
+## 8. Context Managers
 
-# Read CSV
-with open('data.csv', 'r') as f:
-    reader = csv.DictReader(f)
-    for row in reader:
-        print(row['column_name'])
+`with` guarantees cleanup (close files, release connections, commit/rollback) even when an exception occurs.
 
-# Write CSV
-data = [['Name', 'Age'], ['Alice', 25], ['Bob', 30]]
-with open('output.csv', 'w', newline='') as f:
-    writer = csv.writer(f)
-    writer.writerows(data)
-
-""" JSON Operations """
-import json
-
-# Read JSON
-with open('data.json', 'r') as f:
-    data = json.load(f)
-
-# Write JSON
-data = {'name': 'Alice', 'age': 25}
-with open('output.json', 'w') as f:
-    json.dump(data, f, indent=4)
-
-# ============================================================================
-# 8. REGULAR EXPRESSIONS
-# ============================================================================
-
-import re
-
-""" Pattern Matching """
-text = "My phone number is 123-456-7890"
-
-# Find all digits
-digits = re.findall(r'\d+', text)
-
-# Replace digits with asterisks
-masked = re.sub(r'\d', '*', text)
-
-# Match email pattern
-email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-is_valid_email = bool(re.match(email_pattern, "user@example.com"))
-
-# Extract groups
-phone_pattern = r'(\d{3})-(\d{3})-(\d{4})'
-match = re.search(phone_pattern, text)
-if match:
-    area_code = match.group(1)
-
-# Split by pattern
-parts = re.split(r'[,\s]+', "apple, banana orange")
-
-# ============================================================================
-# 9. DATE & TIME OPERATIONS
-# ============================================================================
-
-from datetime import datetime, timedelta, date
-
-""" Current Date and Time """
-now = datetime.now()
-today = date.today()
-
-""" Format Date """
-formatted = now.strftime('%Y-%m-%d %H:%M:%S')
-formatted = now.strftime('%B %d, %Y')  # January 01, 2024
-
-""" Parse Date String """
-date_str = "2024-01-15"
-parsed_date = datetime.strptime(date_str, '%Y-%m-%d')
-
-""" Date Arithmetic """
-tomorrow = today + timedelta(days=1)
-last_week = today - timedelta(weeks=1)
-next_month = today + timedelta(days=30)
-
-""" Calculate Date Difference """
-date1 = datetime(2024, 1, 1)
-date2 = datetime(2024, 12, 31)
-difference = date2 - date1
-print(f"Days: {difference.days}")
-
-""" Calculate Average Time """
-def parse_time(time_str):
-    try:
-        return datetime.strptime(time_str, '%H:%M:%S')
-    except ValueError:
-        return datetime.strptime(time_str, '%H:%M:%S.%f')
-
-def calculate_average_time(times):
-    total_seconds = sum(t.hour * 3600 + t.minute * 60 + t.second + t.microsecond / 1e6 for t in times)
-    average_seconds = total_seconds / len(times)
-    hours = int(average_seconds // 3600)
-    minutes = int((average_seconds % 3600) // 60)
-    seconds = average_seconds % 60
-    return f"{hours:02}:{minutes:02}:{seconds:05.2f}"
-
-# ============================================================================
-# 10. ERROR HANDLING & EXCEPTIONS
-# ============================================================================
-
-""" Try-Except Block """
-try:
-    result = 10 / 0
-except ZeroDivisionError as e:
-    print(f"Error: {e}")
-except Exception as e:
-    print(f"Unexpected error: {e}")
-else:
-    print("No errors occurred")
-finally:
-    print("This always executes")
-
-""" Custom Exception """
-class InvalidAgeError(Exception):
-    def __init__(self, age, message="Age must be between 0 and 120"):
-        self.age = age
-        self.message = message
-        super().__init__(self.message)
-
-def validate_age(age):
-    if age < 0 or age > 120:
-        raise InvalidAgeError(age)
-    return True
-
-""" Context Manager """
-class FileManager:
-    def __init__(self, filename, mode):
-        self.filename = filename
-        self.mode = mode
-        self.file = None
-    
+```python
+class DBTransaction:
+    def __init__(self, conn):
+        self.conn = conn
     def __enter__(self):
-        self.file = open(self.filename, self.mode)
-        return self.file
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.file:
-            self.file.close()
+        return self.conn.cursor()
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type: self.conn.rollback()
+        else:        self.conn.commit()
+        return False            # False → re-raise the exception; True would swallow it
 
-# Usage
-with FileManager('test.txt', 'w') as f:
-    f.write('Hello')
+from contextlib import contextmanager
 
-# ============================================================================
-# 11. OBJECT-ORIENTED PROGRAMMING
-# ============================================================================
+@contextmanager
+def timed(label):
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        print(f"{label}: {time.perf_counter() - start:.2f}s")
 
-""" Class Definition """
-class Employee:
-    # Class variable
-    company = "TechCorp"
-    
-    def __init__(self, name, salary):
-        # Instance variables
-        self.name = name
-        self.salary = salary
-    
-    def get_details(self):
-        return f"{self.name} earns ${self.salary}"
-    
+with open('in.csv') as src, open('out.csv', 'w') as dst, timed('copy'):
+    dst.write(src.read())
+```
+
+---
+
+## 9. Exception Handling
+
+```python
+try:
+    value = int(raw)
+except (ValueError, TypeError) as e:     # catch specific exceptions
+    log.warning("bad value %r: %s", raw, e)
+    value = None
+else:
+    pass                                 # runs only if no exception
+finally:
+    pass                                 # always runs (cleanup)
+```
+
+Best practices:
+- Catch **specific** exceptions; never use a bare `except:` (it also catches `KeyboardInterrupt`/`SystemExit`).
+- Re-raise with context: `raise PipelineError("load failed") from e`.
+- Use `logging` (with `logger.exception(...)` inside `except` to include the traceback), not `print`.
+- **EAFP** (try first, handle failure) is idiomatic Python: `try: d[k] except KeyError:` vs checking first.
+
+```python
+class DataValidationError(Exception):
+    """Raised when a record fails validation."""
+    def __init__(self, record_id, reason):
+        super().__init__(f"record {record_id}: {reason}")
+        self.record_id, self.reason = record_id, reason
+
+def validate(rec):
+    if rec.get('amount') is None or rec['amount'] < 0:
+        raise DataValidationError(rec.get('id'), 'invalid amount')
+```
+
+---
+
+## 10. OOP
+
+```python
+from abc import ABC, abstractmethod
+
+class Source(ABC):                              # abstract base class = interface
+    def __init__(self, name):
+        self.name = name                        # instance attribute
+    @abstractmethod
+    def read(self): ...
+    def __repr__(self):
+        return f"{type(self).__name__}({self.name!r})"
+
+class S3Source(Source):                         # inheritance
+    region = 'us-east-1'                        # class attribute (shared)
+    def __init__(self, name, bucket):
+        super().__init__(name)
+        self.bucket = bucket
+    def read(self):                             # polymorphism: same method, different behaviour
+        return f"reading s3://{self.bucket}"
+
     @classmethod
-    def from_string(cls, emp_str):
-        name, salary = emp_str.split('-')
-        return cls(name, int(salary))
-    
+    def from_uri(cls, uri):                     # alternative constructor
+        return cls('s3', uri.removeprefix('s3://').split('/')[0])
+
     @staticmethod
-    def is_workday(day):
-        return day.weekday() < 5
+    def is_valid_key(key):                      # utility, no self/cls
+        return not key.endswith('/')
 
-""" Inheritance """
-class Manager(Employee):
-    def __init__(self, name, salary, department):
-        super().__init__(name, salary)
-        self.department = department
-    
-    def get_details(self):
-        return f"{self.name} manages {self.department}"
-
-""" Property Decorator """
-class Circle:
-    def __init__(self, radius):
-        self._radius = radius
-    
     @property
-    def radius(self):
-        return self._radius
-    
-    @radius.setter
-    def radius(self, value):
-        if value < 0:
-            raise ValueError("Radius cannot be negative")
-        self._radius = value
-    
-    @property
-    def area(self):
-        return 3.14159 * self._radius ** 2
+    def uri(self):                              # computed attribute with getter
+        return f"s3://{self.bucket}"
+```
 
-# ============================================================================
-# 12. COMMON INTERVIEW PROBLEMS
-# ============================================================================
+| Concept | Meaning |
+|---|---|
+| Encapsulation | Bundle data + methods; `_name` = internal by convention, `__name` = name-mangled |
+| Inheritance | Reuse a parent class; `super()` calls the parent; MRO decides lookup order with multiple inheritance |
+| Polymorphism | Different classes, same interface (`read()`); also duck typing |
+| Abstraction | `ABC` + `@abstractmethod` forces subclasses to implement methods |
+| Composition | "has-a" (pipeline has a source and a sink) – often preferred over deep inheritance |
 
-""" FizzBuzz """
-def fizzbuzz(n):
-    for i in range(1, n + 1):
-        if i % 15 == 0:
-            print("FizzBuzz")
-        elif i % 3 == 0:
-            print("Fizz")
-        elif i % 5 == 0:
-            print("Buzz")
+Useful dunder methods: `__init__`, `__repr__`/`__str__`, `__eq__`/`__hash__`, `__len__`, `__iter__`, `__enter__`/`__exit__`, `__call__`.
+
+---
+
+## 11. Files, CSV, JSON
+
+```python
+import csv, json, gzip
+from pathlib import Path
+
+# Text files – always pass encoding; iterate instead of read() for big files
+with open('input.txt', encoding='utf-8') as f:
+    for line in f: ...
+
+# CSV
+with open('in.csv', newline='', encoding='utf-8') as f:
+    for row in csv.DictReader(f):               # each row is a dict keyed by header
+        ...
+with open('out.csv', 'w', newline='', encoding='utf-8') as f:
+    w = csv.DictWriter(f, fieldnames=['id', 'name'])
+    w.writeheader(); w.writerows([{'id': 1, 'name': 'Alice'}])
+
+# JSON
+data = json.loads('{"a": 1}');  text = json.dumps(data, indent=2, default=str)  # default=str handles dates/Decimals
+with open('data.json', encoding='utf-8') as f: obj = json.load(f)
+
+# JSON Lines (one JSON object per line) – streamable, common for logs/events
+with gzip.open('events.jsonl.gz', 'rt', encoding='utf-8') as f:
+    for line in f:
+        event = json.loads(line)
+
+# pathlib
+for p in Path('landing').glob('**/*.csv'):
+    print(p.name, p.stem, p.suffix, p.stat().st_size)
+```
+
+Flatten nested JSON (very common):
+```python
+def flatten(obj, parent='', sep='.'):
+    items = {}
+    for k, v in obj.items():
+        key = f"{parent}{sep}{k}" if parent else k
+        if isinstance(v, dict):
+            items.update(flatten(v, key, sep))
         else:
-            print(i)
+            items[key] = v
+    return items
 
-""" Find Pairs with Given Sum """
-def find_pairs(numbers, target_sum):
-    pairs = []
-    for i in range(len(numbers)):
-        for j in range(i + 1, len(numbers)):
-            if numbers[i] + numbers[j] == target_sum:
-                pairs.append((numbers[i], numbers[j]))
-    return pairs
+flatten({'id': 1, 'cust': {'name': 'A', 'addr': {'zip': '10001'}}})
+# {'id': 1, 'cust.name': 'A', 'cust.addr.zip': '10001'}
+```
 
-# Optimized version using hash set
-def find_pairs_optimized(numbers, target_sum):
-    seen = set()
-    pairs = []
-    for num in numbers:
-        complement = target_sum - num
-        if complement in seen:
-            pairs.append((complement, num))
-        seen.add(num)
-    return pairs
+---
 
-""" Longest Substring Without Repeating Characters """
-def longest_unique_substring(s):
-    char_set = set()
-    left = 0
-    max_length = 0
-    
-    for right in range(len(s)):
-        while s[right] in char_set:
-            char_set.remove(s[left])
-            left += 1
-        char_set.add(s[right])
-        max_length = max(max_length, right - left + 1)
-    
-    return max_length
+## 12. Dates and Times
 
-""" Valid Parentheses """
+```python
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo                       # 3.9+
+
+now_utc = datetime.now(timezone.utc)                # prefer timezone-aware datetimes
+ny      = now_utc.astimezone(ZoneInfo('America/New_York'))
+parsed  = datetime.strptime('2026-10-29 14:05', '%Y-%m-%d %H:%M')   # str → datetime
+text    = parsed.strftime('%Y%m%d')                                   # datetime → str
+iso     = datetime.fromisoformat('2026-10-29T14:05:00+00:00')
+delta   = date(2026, 12, 31) - date(2026, 1, 1); delta.days         # 364
+yesterday = date.today() - timedelta(days=1)
+
+def month_bounds(d):                                # first and last day of a month
+    first = d.replace(day=1)
+    nxt = (first + timedelta(days=32)).replace(day=1)
+    return first, nxt - timedelta(days=1)
+
+def date_range(start, end):                         # inclusive daily range (backfills)
+    for n in range((end - start).days + 1):
+        yield start + timedelta(days=n)
+```
+`timedelta(days=30)` is not "one month" – use `dateutil.relativedelta(months=1)` or the helper above.
+
+---
+
+## 13. Concurrency (when it matters)
+
+```python
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+
+# I/O-bound (S3 downloads, API calls) → threads
+with ThreadPoolExecutor(max_workers=8) as pool:
+    futures = {pool.submit(download, key): key for key in keys}
+    for fut in as_completed(futures):
+        try:
+            fut.result()
+        except Exception as e:
+            log.error("failed %s: %s", futures[fut], e)
+
+# CPU-bound (parsing, hashing, compression) → processes (bypasses the GIL)
+with ProcessPoolExecutor() as pool:
+    results = list(pool.map(parse_file, files))
+```
+`asyncio` is another option for very high numbers of concurrent I/O calls (e.g. `aiohttp`).
+
+---
+
+## 14. pandas Essentials (often asked alongside Python)
+
+```python
+import pandas as pd
+
+df = pd.read_csv('orders.csv', parse_dates=['order_ts'], dtype={'zip': 'string'})
+df = df.drop_duplicates(subset=['order_id'], keep='last')
+df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0)
+summary = (df[df['status'] == 'COMPLETE']
+           .groupby('region', as_index=False)
+           .agg(orders=('order_id', 'count'), revenue=('amount', 'sum')))
+merged = df.merge(customers, on='customer_id', how='left', validate='many_to_one')
+latest = df.sort_values('updated_at').groupby('order_id').tail(1)     # latest row per key
+df['rank'] = df.groupby('region')['amount'].rank(method='dense', ascending=False)
+
+for chunk in pd.read_csv('huge.csv', chunksize=100_000):              # large files
+    process(chunk)
+```
+Avoid row-by-row `iterrows()`; use vectorized column operations. For data larger than memory use chunks, Polars, DuckDB or Spark.
+
+---
+
+## 15. AWS boto3 Basics
+
+```python
+import boto3, json
+
+s3 = boto3.client('s3')
+
+# list_objects_v2 returns at most 1,000 keys per call → always paginate
+paginator = s3.get_paginator('list_objects_v2')
+for page in paginator.paginate(Bucket='my-bucket', Prefix='landing/2026/'):
+    for obj in page.get('Contents', []):
+        print(obj['Key'], obj['Size'])
+
+s3.upload_file('local.csv', 'my-bucket', 'landing/local.csv')    # multipart for large files
+s3.download_file('my-bucket', 'landing/local.csv', '/tmp/local.csv')
+
+body = s3.get_object(Bucket='my-bucket', Key='data/events.jsonl')['Body']
+for line in body.iter_lines():                                     # stream, don't read() huge files
+    event = json.loads(line)
+
+s3.put_object(Bucket='my-bucket', Key='out/result.json', Body=json.dumps({'ok': True}))
+
+secret = json.loads(
+    boto3.client('secretsmanager').get_secret_value(SecretId='prod/db')['SecretString'])
+```
+Credentials come from IAM roles / environment – never hardcode keys. Handle `botocore.exceptions.ClientError` and check `e.response['Error']['Code']`.
+
+Secure tokens: use the `secrets` module (`secrets.token_urlsafe(16)`), **not** `random`, which is predictable.
+
+---
+
+## 16. Data Engineer Coding Problems
+
+### Arrays and hashing
+```python
+def two_sum(nums, target):                        # O(n)
+    seen = {}
+    for i, n in enumerate(nums):
+        if target - n in seen:
+            return [seen[target - n], i]
+        seen[n] = i
+    return []
+
+def find_missing(nums):                           # numbers 1..n with one missing
+    n = len(nums) + 1
+    return n * (n + 1) // 2 - sum(nums)
+
+def second_largest(nums):
+    uniq = sorted(set(nums), reverse=True)
+    return uniq[1] if len(uniq) > 1 else None
+
+def find_duplicates(items):
+    return [k for k, c in Counter(items).items() if c > 1]
+
+def dedupe_keep_order(items):
+    return list(dict.fromkeys(items))             # preserves first occurrence
+
+def group_anagrams(words):
+    groups = defaultdict(list)
+    for w in words:
+        groups[''.join(sorted(w))].append(w)
+    return list(groups.values())
+
+def top_k_frequent(items, k):
+    return [x for x, _ in Counter(items).most_common(k)]
+
+def merge_intervals(intervals):                   # [[1,3],[2,6],[8,10]] → [[1,6],[8,10]]
+    out = []
+    for start, end in sorted(intervals):
+        if out and start <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], end)
+        else:
+            out.append([start, end])
+    return out
+
 def is_valid_parentheses(s):
-    stack = []
-    mapping = {')': '(', '}': '{', ']': '['}
-    
-    for char in s:
-        if char in mapping:
-            top = stack.pop() if stack else '#'
-            if mapping[char] != top:
+    pairs, stack = {')': '(', ']': '[', '}': '{'}, []
+    for ch in s:
+        if ch in pairs:
+            if not stack or stack.pop() != pairs[ch]:
                 return False
-        else:
-            stack.append(char)
-    
+        elif ch in '([{':
+            stack.append(ch)
     return not stack
 
-""" Candy Problem (Wrapper Exchange) """
-def max_candies(amount):
-    candies = amount
-    wrappers = amount
-    
-    while wrappers >= 3:
-        additional_candies = wrappers // 3
-        candies += additional_candies
-        wrappers = wrappers % 3 + additional_candies
-    
+def binary_search(arr, target):                   # arr must be sorted; or use bisect
+    lo, hi = 0, len(arr) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if arr[mid] == target: return mid
+        if arr[mid] < target:  lo = mid + 1
+        else:                  hi = mid - 1
+    return -1
+
+def merge_sorted(a, b):                           # core of merge sort; or heapq.merge
+    i = j = 0; out = []
+    while i < len(a) and j < len(b):
+        if a[i] <= b[j]: out.append(a[i]); i += 1
+        else:            out.append(b[j]); j += 1
+    return out + a[i:] + b[j:]
+```
+In real code use `sorted()` (Timsort, O(n log n), stable); the algorithms below are asked to test fundamentals.
+
+### Sorting algorithms
+| Algorithm | Time (avg / worst) | Extra space | Stable |
+|---|---|---|---|
+| Bubble sort | O(n²) / O(n²) | O(1) | Yes |
+| Merge sort | O(n log n) / O(n log n) | O(n) | Yes |
+| Quick sort | O(n log n) / O(n²) | O(log n) in-place; O(n) for the version below | No |
+
+```python
+def bubble_sort(arr):                             # swap adjacent items; stop early if no swaps
+    arr = arr[:]
+    for i in range(len(arr) - 1):
+        swapped = False
+        for j in range(len(arr) - 1 - i):         # last i items are already in place
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+                swapped = True
+        if not swapped:
+            break
+    return arr
+
+def merge_sort(arr):                              # divide, sort halves, merge
+    if len(arr) <= 1:
+        return arr
+    mid = len(arr) // 2
+    return merge_sorted(merge_sort(arr[:mid]), merge_sort(arr[mid:]))
+
+def quick_sort(arr):                              # partition around a pivot (simple, not in-place)
+    if len(arr) <= 1:
+        return arr
+    pivot = arr[len(arr) // 2]
+    return (quick_sort([x for x in arr if x < pivot])
+            + [x for x in arr if x == pivot]
+            + quick_sort([x for x in arr if x > pivot]))
+```
+
+### Recursion
+Every recursive function needs a **base case** and must move toward it. Python's default recursion limit is ~1000 and there is no tail-call optimization.
+```python
+def factorial(n):
+    return 1 if n <= 1 else n * factorial(n - 1)
+
+def sum_of_digits(n):
+    return 0 if n == 0 else n % 10 + sum_of_digits(n // 10)
+
+def reverse_list(lst):                            # O(n²) because of slicing – iterative lst[::-1] is O(n)
+    return lst if len(lst) <= 1 else reverse_list(lst[1:]) + [lst[0]]
+
+def tower_of_hanoi(n, source='A', target='C', spare='B'):
+    """Move n disks from source to target; 2**n - 1 moves."""
+    if n == 0:
+        return
+    tower_of_hanoi(n - 1, source, spare, target)  # move n-1 disks out of the way
+    print(f"Move disk {n} from {source} to {target}")
+    tower_of_hanoi(n - 1, spare, target, source)  # move them on top of disk n
+
+tower_of_hanoi(3)   # 7 moves
+```
+
+### Candy-wrapper exchange puzzle
+"Each candy costs 1; every 3 wrappers can be exchanged for 1 candy. How many candies can you eat with `amount` money?"
+```python
+def max_candies(amount, wrappers_per_candy=3):
+    candies = wrappers = amount
+    while wrappers >= wrappers_per_candy:
+        new = wrappers // wrappers_per_candy
+        candies += new
+        wrappers = wrappers % wrappers_per_candy + new   # leftover + wrappers of new candies
     return candies
 
-""" Word Pattern Matching """
-def word_pattern(pattern, s):
-    words = s.split()
-    if len(pattern) != len(words):
-        return False
-    
-    char_to_word = {}
-    word_to_char = {}
-    
-    for char, word in zip(pattern, words):
-        if char in char_to_word:
-            if char_to_word[char] != word:
-                return False
-        else:
-            char_to_word[char] = word
-        
-        if word in word_to_char:
-            if word_to_char[word] != char:
-                return False
-        else:
-            word_to_char[word] = char
-    
-    return True
+max_candies(15)   # 22  (15 + 5 + 1 + 1, with 1 wrapper left)
+```
 
-""" Group Anagrams """
-def group_anagrams(words):
-    from collections import defaultdict
-    anagram_groups = defaultdict(list)
-    
-    for word in words:
-        sorted_word = ''.join(sorted(word))
-        anagram_groups[sorted_word].append(word)
-    
-    return list(anagram_groups.values())
+### Data-processing scenarios
 
-# ============================================================================
-# 13. AWS BOTO3 BASICS
-# ============================================================================
+**1. Word count on a large file (streaming)**
+```python
+def word_count(path):
+    counts = Counter()
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            counts.update(re.findall(r'\w+', line.lower()))
+    return counts.most_common(10)
+```
 
-""" S3 Operations """
-import boto3
+**2. Latest record per key (dedupe CDC records)**
+```python
+def latest_per_key(records, key='id', ts='updated_at'):
+    latest = {}
+    for r in records:
+        k = r[key]
+        if k not in latest or r[ts] > latest[k][ts]:
+            latest[k] = r
+    return list(latest.values())
+```
 
-# Create S3 client
-s3_client = boto3.client('s3')
+**3. Group by and aggregate without pandas**
+```python
+def revenue_by_region(rows):
+    totals = defaultdict(lambda: {'orders': 0, 'revenue': 0.0})
+    for r in rows:
+        t = totals[r['region']]
+        t['orders'] += 1
+        t['revenue'] += float(r['amount'])
+    return dict(totals)
+```
 
-# List buckets
-response = s3_client.list_buckets()
-for bucket in response['Buckets']:
-    print(bucket['Name'])
+**4. Validate records and quarantine bad ones**
+```python
+def split_valid(rows, required=('id', 'amount')):
+    good, bad = [], []
+    for r in rows:
+        missing = [c for c in required if not r.get(c)]
+        try:
+            if missing:
+                raise ValueError(f"missing {missing}")
+            r['amount'] = float(r['amount'])
+            good.append(r)
+        except ValueError as e:
+            bad.append({**r, '_error': str(e)})
+    return good, bad
+```
 
-# List objects in bucket
-response = s3_client.list_objects_v2(Bucket='my-bucket', Prefix='path/')
-for obj in response.get('Contents', []):
-    print(obj['Key'])
+**5. Join two datasets (hash join)**
+```python
+def left_join(orders, customers, key='customer_id'):
+    lookup = {c[key]: c for c in customers}                 # build side: smaller dataset
+    return [{**o, **lookup.get(o[key], {})} for o in orders]
+```
 
-# Upload file
-s3_client.upload_file('local_file.txt', 'my-bucket', 'remote_file.txt')
+**6. Compare two files / find changed records**
+```python
+def diff(old_rows, new_rows, key='id'):
+    old = {r[key]: r for r in old_rows}
+    new = {r[key]: r for r in new_rows}
+    inserted = [new[k] for k in new.keys() - old.keys()]
+    deleted  = [old[k] for k in old.keys() - new.keys()]
+    updated  = [new[k] for k in new.keys() & old.keys() if new[k] != old[k]]
+    return inserted, updated, deleted
+```
 
-# Download file
-s3_client.download_file('my-bucket', 'remote_file.txt', 'local_file.txt')
+**7. Parse log lines and count errors per hour**
+```python
+LOG = re.compile(r'^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}):\d{2}:\d{2} (?P<level>\w+) ')
+def errors_per_hour(path):
+    counts = Counter()
+    for line in read_lines(path):
+        m = LOG.match(line)
+        if m and m['level'] == 'ERROR':
+            counts[m['ts']] += 1
+    return dict(sorted(counts.items()))
+```
 
-# Delete object
-s3_client.delete_object(Bucket='my-bucket', Key='file.txt')
+**8. Split a large CSV into files of N rows**
+```python
+def split_csv(path, rows_per_file=100_000):
+    with open(path, newline='', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        header = next(reader)
+        for i, batch in enumerate(chunked(reader, rows_per_file), start=1):
+            with open(f"part_{i:04d}.csv", 'w', newline='', encoding='utf-8') as out:
+                w = csv.writer(out); w.writerow(header); w.writerows(batch)
+```
 
-# Put object
-s3_client.put_object(Bucket='my-bucket', Key='new_file.txt', Body='Hello, World!')
+**9. Moving average / sliding window over a stream**
+```python
+def moving_average(values, window=3):
+    q, total = deque(), 0
+    for v in values:
+        q.append(v); total += v
+        if len(q) > window:
+            total -= q.popleft()
+        if len(q) == window:
+            yield total / window
+```
 
-""" Secrets Manager """
-secrets_client = boto3.client('secretsmanager')
+**10. LRU cache (design question)**
+```python
+class LRUCache:
+    def __init__(self, capacity):
+        self.cap, self.data = capacity, OrderedDict()
+    def get(self, key):
+        if key not in self.data:
+            return None
+        self.data.move_to_end(key)
+        return self.data[key]
+    def put(self, key, value):
+        self.data[key] = value
+        self.data.move_to_end(key)
+        if len(self.data) > self.cap:
+            self.data.popitem(last=False)          # evict least recently used
+```
 
-# Create secret
-response = secrets_client.create_secret(
-    Name='my-secret',
-    SecretString='my-secret-value'
-)
+---
 
-# Get secret
-response = secrets_client.get_secret_value(SecretId='my-secret')
-secret = response['SecretString']
+## 17. Quick Q&A
 
-""" Token Vault Example """
-import random
-import string
-
-def create_token(length=16):
-    characters = string.ascii_letters + string.digits
-    return ''.join(random.choice(characters) for _ in range(length))
-
-def create_token_vault(sensitive_data):
-    token_vault = {}
-    for data in sensitive_data:
-        token = create_token()
-        token_vault[token] = data
-    return token_vault
-
-def detokenize(token, token_vault):
-    return token_vault.get(token, "Token not found")
-
-# ============================================================================
-# END OF PYTHON INTERVIEW GUIDE
-# ============================================================================
+- **List vs tuple?** List is mutable; tuple is immutable, hashable (if its items are), slightly faster and smaller.
+- **List vs generator?** A list holds all items in memory; a generator yields one at a time (lazy, single pass).
+- **`append` vs `extend`?** `append` adds one element (even a list); `extend` adds each item of an iterable.
+- **`sort()` vs `sorted()`?** `sort()` is in place on lists and returns `None`; `sorted()` returns a new list from any iterable.
+- **`@staticmethod` vs `@classmethod`?** Static gets no implicit argument; class method gets `cls` (used for alternative constructors).
+- **`__str__` vs `__repr__`?** `__str__` is user-friendly; `__repr__` is unambiguous for developers (used in logs/debugging).
+- **What is `if __name__ == '__main__':`?** Runs code only when the file is executed directly, not when imported.
+- **How do you process a 50 GB file?** Stream it line by line or in chunks (generators, `chunksize`), never `read()` it all; parallelize by file/partition; use Spark/DuckDB if it outgrows one machine.
+- **How do you make a pipeline step idempotent?** Deterministic output paths, overwrite instead of append, dedupe by key, track processed files/watermarks.
+- **Threads vs processes?** Threads for I/O-bound work (GIL is released while waiting); processes for CPU-bound work.
+- **How do you manage dependencies?** Virtual environments (`venv`), pinned versions in `requirements.txt`/`pyproject.toml`; unit tests with `pytest`; formatting/linting with `black`/`ruff`.
