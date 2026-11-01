@@ -43,11 +43,12 @@ Use `functions as F` instead of `from pyspark.sql.functions import *` – the wi
 `df.explain("formatted")` shows the physical plan; the **Spark UI** shows jobs, stages, tasks, shuffle sizes, spill and skew.
 
 **DataFrame vs RDD**
-| DataFrame | RDD |
-|---|---|
-| Schema, columnar, optimized by Catalyst/Tungsten | No schema, no optimizer |
+         RDD = low-level distributed collection of objects. You tell Spark more explicitly how to process the data.
+         DataFrame = higher-level distributed table with named columns and schema. You tell Spark what result you want, and Spark's SQL engine can optimize the execution.
+| DataFrame                                                                      | RDD |
+| Schema, columnar, optimized by Catalyst/Tungsten                               | No schema, no optimizer |
 | Faster, less code; Python and JVM run at the same speed for built-in functions | Python lambdas run in Python workers (slower) |
-| Default choice | Low-level control, unstructured data, legacy code |
+| Default choice                                                                 | Low-level control, unstructured data, legacy code |
 
 **Fault tolerance:** Spark records each dataset's **lineage** (the DAG of transformations). If an executor dies, lost partitions are recomputed from lineage.
 
