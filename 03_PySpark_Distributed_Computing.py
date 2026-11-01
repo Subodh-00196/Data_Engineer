@@ -33,6 +33,8 @@ Use `functions as F` instead of `from pyspark.sql.functions import *` – the wi
 - Wide – requires a **shuffle** (data exchanged over the network; expensive): `groupBy`, `join` (non-broadcast), `distinct`, `orderBy`, `repartition`, window functions.
 
 **Execution flow**
+         Your PySpark code → Driver → Logical Plan → Optimized Plan → Physical Plan → Jobs → Stages → Tasks → Executors → Data processed
+         
 1. Your code → unresolved **logical plan**.
 2. **Catalyst** optimizer: analysis (resolve columns/tables) → logical optimization (predicate pushdown, column pruning, constant folding) → **physical plan** (chooses join strategies, etc.).
 3. **Tungsten** executes it efficiently (off-heap memory management, whole-stage code generation).
