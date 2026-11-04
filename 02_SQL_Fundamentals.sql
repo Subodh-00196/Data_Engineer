@@ -1,3 +1,4 @@
+https://www.google.com/url?q=https%3A%2F%2Fmeet.google.com%2Fvza-gzto-izo&sa=D&source=calendar&usd=2&usg=AOvVaw0Te0_3bv6HoQC7wImrIRzG
 /*
 ================================================================================
                     SQL - DATA ENGINEER INTERVIEW GUIDE
