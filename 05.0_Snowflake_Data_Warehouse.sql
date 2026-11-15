@@ -712,6 +712,15 @@ PATTERN = '.*sales.*[.]parquet';
 SELECT * FROM external_sales
 WHERE sale_date >= '2024-01-01';
 
+/* Auto Ingest - Snowpipe */   
+/* S3 Event Notification  -> Amazon SQS  -> Snowpipe */
+CREATE OR REPLACE PIPE claims_pipe
+AUTO_INGEST = TRUE
+AS
+COPY INTO claims
+FROM @claims_stage
+FILE_FORMAT = (FORMAT_NAME = claims_csv_format);
+
 /*
 ================================================================================
 END OF SNOWFLAKE INTERVIEW GUIDE
