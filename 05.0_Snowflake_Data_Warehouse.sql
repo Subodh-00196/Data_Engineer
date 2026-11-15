@@ -20,6 +20,8 @@ TABLE OF CONTENTS:
 11. SECURITY & ACCESS CONTROL
 12. PERFORMANCE OPTIMIZATION
 13. BEST PRACTICES
+
+S3 -> Storage Integration -> External Stage -> Snowpipe(Auto-ingest Copy INTO) -> Bronze -> Stream(CDC) -> Task -> Merge -> Silver -> Dynamic Table(Transformation/Join/Aggregation) -> Gold
 ================================================================================
 */
 
@@ -720,6 +722,26 @@ AS
 COPY INTO claims
 FROM @claims_stage
 FILE_FORMAT = (FORMAT_NAME = claims_csv_format);
+
+/* Dynamic Table */
+A Dynamic Table stores the result of a query and Snowflake keeps it refreshed according to the freshness requirement (TARGET_LAG).
+
+CREATE DYNAMIC TABLE gold.claim_details
+TARGET_LAG = '10 minutes'
+WAREHOUSE = transform_wh
+AS
+SELECT
+    c.claim_id,
+    c.claim_date,
+    c.amount,
+    m.member_name,
+    m.state,
+    p.provider_name
+FROM silver.claims c
+JOIN silver.members m
+    ON c.member_id = m.member_id
+JOIN silver.providers p
+    ON c.provider_id = p.provider_id;
 
 /*
 ================================================================================
