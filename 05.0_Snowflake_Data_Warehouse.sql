@@ -594,7 +594,7 @@ FROM sales
 GROUP BY DATE_TRUNC('month', sale_date), customer_id;
 
 /* Search Optimization Service */
-ALTER TABLE my_table ADD SEARCH OPTIMIZATION;
+ALTER TABLE my_table ADD SEARCH OPTIMIZATION ON EQUALITY(ORDER_ID);;
 ALTER TABLE my_table DROP SEARCH OPTIMIZATION;
 
 /* Query Profiling */
