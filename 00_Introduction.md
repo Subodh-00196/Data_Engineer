@@ -1,3 +1,4 @@
+
 Hi, I’m Subodh. I’m a Data Engineer with over five years of experience building and supporting cloud-based data platforms, most recently at Elevance Health in the healthcare payer domain. I currently work on AEDL, our enterprise data lake on AWS, where I build scalable data processing and integration solutions.
 
 My core technical stack includes Python, SQL, PySpark, AWS Glue, EMR, Step Functions, S3, RDS, Snowflake, and Databricks.
@@ -6,3 +7,4 @@ One of the key areas I’ve worked on is ExtractGen, a metadata and configuratio
 
 I’ve also worked on Snowflake SQL query and job performance tuning, optimizing PySpark workloads, troubleshooting AWS Glue and Spark jobs, and building scalable solutions that can support multiple source systems and evolving business requirements.
 
+https://acnrecruitment.accenture.com/testcompatibility/interview/candidatewelcome.html?data=aHR0cHM6Ly9hY25yZWNydWl0bWVudC5hY2NlbnR1cmUuY29tL3YyL2ludGVydmlldy9ob21lL2V5SnNkQ0k2SUNKVWEyNDZNV05oT1daaU1EWXRaamxtTUMwMFpEQTBMV0l6TjJJdFl6TTNOamcxT1RrellUZzRJbjA9
