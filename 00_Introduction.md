@@ -7,4 +7,4 @@ One of the key areas I’ve worked on is ExtractGen, a metadata and configuratio
 
 I’ve also worked on Snowflake SQL query and job performance tuning, optimizing PySpark workloads, troubleshooting AWS Glue and Spark jobs, and building scalable solutions that can support multiple source systems and evolving business requirements.
 
-https://acnrecruitment.accenture.com/testcompatibility/interview/candidatewelcome.html?data=aHR0cHM6Ly9hY25yZWNydWl0bWVudC5hY2NlbnR1cmUuY29tL3YyL2ludGVydmlldy9ob21lL2V5SnNkQ0k2SUNKVWEyNDZNV05oT1daaU1EWXRaamxtTUMwMFpEQTBMV0l6TjJJdFl6TTNOamcxT1RrellUZzRJbjA9
+https://teams.microsoft.com/l/meetup-join/19%3ameeting_OGFhMWZjMmItMmVkMy00NTc5LWIxZjAtZDkyNGZjNmU5Zjg2%40thread.v2/0?context=%7b%22Tid%22%3a%22ff355289-721e-4dd7-a663-afec62ab9d54%22%2c%22Oid%22%3a%224102e142-781a-47ed-9732-dc8f1d156598%22%7d
