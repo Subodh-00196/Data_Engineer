@@ -6,5 +6,3 @@ My core technical stack includes Python, SQL, PySpark, AWS Glue, EMR, Step Funct
 One of the key areas I’ve worked on is ExtractGen, a metadata and configuration-driven PySpark framework for outbound data extraction and file delivery. Instead of teams building separate custom scripts for every extract, they define the required configuration, and the framework manages the end-to-end process, including reading data from Snowflake, RDS, or Databricks, incremental processing, file generation and splitting, record-count validation, audit tracking, and downstream file delivery.
 
 I’ve also worked on Snowflake SQL query and job performance tuning, optimizing PySpark workloads, troubleshooting AWS Glue and Spark jobs, and building scalable solutions that can support multiple source systems and evolving business requirements.
-
-https://teams.microsoft.com/l/meetup-join/19%3ameeting_OGFhMWZjMmItMmVkMy00NTc5LWIxZjAtZDkyNGZjNmU5Zjg2%40thread.v2/0?context=%7b%22Tid%22%3a%22ff355289-721e-4dd7-a663-afec62ab9d54%22%2c%22Oid%22%3a%224102e142-781a-47ed-9732-dc8f1d156598%22%7d
